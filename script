@@ -1,0 +1,16 @@
+#!/bin/bash
+clear
+#Go to the correct directory to modify the boards.txt file
+path="/Applications/Arduino.app/Contents/Resources/Java/hardware/arduino/avr"
+
+if sudo cat $path/boards.txt ./bcn3delectronics.txt > boards.txt
+then echo "boards.txt file updated successfully!"
+else echo "Something went wrong...try again later"
+fi
+
+mv boards.txt $path
+#show the last lines of the new merged file to ensure the correct merge
+tail -n 16 $path/boards.txt
+echo " "
+echo "This is all the data added to your boards.txt file"
+echo "Now you can select BCN3DElectronics in your Arduino IDE"
