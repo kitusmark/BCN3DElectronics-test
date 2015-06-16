@@ -8,7 +8,6 @@
 #include "thermistortables.h"
 #include <genieArduino.h>
 #include <SD.h>
-#include <avr/io.h>
 
 //Define Macros to work with non Arduino Compatible pins
 #define BV(bit)					(1 << bit)
@@ -20,37 +19,37 @@
 // First all the axis. 6 Axis for dual independent extruder. Axis X0 and X1_STOP registers need to be set directly
 #define X0_STEP		5
 #define X0_DIR		3
-#define X0_EN		4
-#define X0_STOP		6
+#define X0_EN		2
+#define X0_STOP		77
 
-#define X1_STEP		3
-#define X1_DIR		5
-#define X1_EN		2
-#define X1_STOP		6
+#define X1_STEP		73
+#define X1_DIR		76
+#define X1_EN		75
+#define X1_STOP		79
 
-#define E0_STEP		27
-#define E0_DIR		29
+#define E0_STEP		29
+#define E0_DIR		27
 #define E0_EN		28
 #define E0_STOP		26
 
-#define E1_STEP		A1
-#define E1_DIR		A3
+#define E1_STEP		A3
+#define E1_DIR		A1
 #define E1_EN		A2
 #define E1_STOP		A0
 
-#define Z_STEP		35
-#define Z_DIR		37
-#define Z_EN		36
+#define Z_STEP		25
+#define Z_DIR		23
+#define Z_EN		24
 #define Z_STOP		34
 
-#define Y_STEP		31
-#define Y_DIR		33
-#define Y_EN		32
+#define Y_STEP		30
+#define Y_DIR		32
+#define Y_EN		31
 #define Y_STOP		30
 
 //Layer Fans
-#define LFAN0		6
-#define	LFAN1		45		
+#define LFAN0		45
+#define	LFAN1		6		
 //RGB LEDs
 #define GREEN		11
 #define	RED			12
@@ -70,15 +69,15 @@
 #define MLED		A14
 
 //SD Card
-//#define SD
+#define SDCARD
 #define SDSS	53
-Sd2Card card;
-SdVolume volume;
-File root;
+//Sd2Card card;
+//SdVolume volume;
+//File root;
 
 //LCD display 
 //#define LCD
-#define RESETLINE	
+#define RESETLINE 9	
 Genie display;
 
 //Values needed
@@ -90,6 +89,8 @@ Genie display;
 #define STEP_SPEED 500	//	Delay time between step pulses in microseconds
 
 const char* axis[] = {"X0","X1","E0", "E1", "Y", "Z"};
+const  unsigned int BED110CADCVALUE = 450;
+const unsigned int BEDAMBTEMPADCVALUE = 1000;
 int8_t motors;
 uint8_t stepPin, enablePin, directionPin;
 String command;
@@ -98,15 +99,15 @@ int temp1, temp2, temp3;
 
 void setup()	{
 	//First let's set the Axis pins
-	setBit(DDRJ, X0_DIR);		//Set the pin 3 in port J as output
-	setBit(DDRJ, X0_EN);		//Set the pin 4 in port J as output
-	setBit(DDRJ, X0_STEP);		//Set the pin 5 in port J as output
-	clearBit(DDRJ, X0_STOP);	//Set the pin 6 in port J as input
+	pinMode(X0_DIR, OUTPUT);		
+	pinMode(X0_EN, OUTPUT);		
+	pinMode(X0_STEP, OUTPUT);	
+	pinMode(X0_STOP, OUTPUT);	
 	 
 	pinMode(X1_DIR, OUTPUT);
 	pinMode(X1_EN, OUTPUT);
 	pinMode(X1_STEP, OUTPUT);
-	clearBit(DDRE, X1_STOP);	//Set the pin 6 in port J as input
+	pinMode(X1_STOP, INPUT);	
 	
 	pinMode(E0_DIR, OUTPUT);
 	pinMode(E0_EN, OUTPUT);
@@ -128,9 +129,23 @@ void setup()	{
 	pinMode(Y_STEP, OUTPUT);
 	pinMode(Y_STOP, INPUT);
 	
+	//Disable the Stepper Motors
+	digitalWrite(X0_EN, HIGH);
+	digitalWrite(X1_EN, HIGH);
+	digitalWrite(E0_EN, HIGH);
+	digitalWrite(E1_EN, HIGH);
+	digitalWrite(Z_EN, HIGH);
+	digitalWrite(Y_EN, HIGH);
+	
 	pinMode(GREEN, OUTPUT);
 	pinMode(RED, OUTPUT);
 	pinMode(BLUE, OUTPUT);
+	
+	//Pull all the light to ground
+	digitalWrite(GREEN, LOW);
+	digitalWrite(BLUE, LOW);
+	digitalWrite(RED,LOW);
+	digitalWrite(MLED, LOW);
 	
 	pinMode(LFAN0, OUTPUT);
 	pinMode(LFAN1, OUTPUT);
@@ -142,61 +157,34 @@ void setup()	{
 	pinMode(HOTEND0_THERM, INPUT);
 	pinMode(HOTEND1_THERM, INPUT);
 	pinMode(BED_THERM, INPUT);
-		
-	//Disable the Stepper Motors
-	digitalWrite(X0_EN, HIGH);
-	digitalWrite(X1_EN, HIGH);
-	digitalWrite(E0_EN, HIGH);
-	digitalWrite(E1_EN, HIGH);
-	digitalWrite(Z_EN, HIGH);
-	digitalWrite(Y_EN, HIGH);
-	
-	//Pull all the light to ground
-	digitalWrite(GREEN, LOW);
-	digitalWrite(BLUE, LOW);
-	digitalWrite(RED,LOW);
-	digitalWrite(MLED, LOW);
 	
 	pinMode(RELAY, OUTPUT);
-	digitalWrite(RELAY, LOW);
+	//digitalWrite(RELAY, LOW);
 	delay(500);
 	digitalWrite(RELAY, HIGH);
 	pinMode(MLED, OUTPUT);
 	
 	Serial.begin(115200);
-	delay(100);
+	delay(50);
 	Serial.println("Initializing BCNElectronics v1.0");
 	
-	#ifdef SD
-		pinMode(SDSS, OUTPUT);
-		pinMode(SPI_MISO_PIN, INPUT);
-		pinMode(SPI_MOSI_PIN, OUTPUT);
-		pinMode(SPI_SCK_PIN, OUTPUT);
-		
-		digitalWrite(SPI_MOSI_PIN, LOW);
-		digitalWrite(SPI_MISO_PIN, LOW);
-		digitalWrite(SDSS, LOW);
-		delay(1);
-		SD.begin(SDSS);
-		
-		if (!card.init(SPI_FULL_SPEED, SDSS))	{
-			Serial.println("SD card init Failed");
-		} 
-		else{
-			if (!volume.init(card))	{
-				Serial.println("SD card volume init Failed");
-			}
-		else{
-			Serial.println("Files Found. SD OK!");
-			}
-		}
-	
-	#endif
-	
+	//Init LCD Display	
 	#ifdef LCD 
 		pinMode(RESETLINE, OUTPUT);
 		Serial2.begin(200000);
 		display.Begin(Serial2);
+	#endif
+	
+	//Init SD Card	
+	#ifdef SDCARD
+	Serial.println("Initializing SD Card...");
+	//Check if the SD card is present
+	if (!SD.begin(SDSS)) {
+		Serial.println("Card Failed, or not present");
+		//do nothing
+		return;	
+	}
+	Serial.println("Card Initialized");
 	#endif
 	
 	//Status LED light up 3 times
@@ -204,9 +192,9 @@ void setup()	{
 	for (i = 0; i < 4; i++)
 	{
 		digitalWrite(MLED, HIGH);
-		delay(200);
+		delay(100);
 		digitalWrite(MLED,LOW);
-		delay(200);
+		delay(100);
 	}
 	printCommandInfo();
 }
@@ -214,8 +202,6 @@ void setup()	{
 	void loop()	{
 	//Wait for the commands in the Serial Port
 	commands();
-	
-
 }
 
 // USER DEFINED FUNCTIONS
@@ -435,7 +421,7 @@ void commands()	{
 void parseCommand(String com)	{
 	String part1, part2;
 	
-	//the commands will ignore de Case, so it could be:
+	//the commands will ignore the Case, so it could be:
 	//X0 2 or x0 2
 	//This command will make the X0 Axis turn 2 complete turns clockwise. 
 	//Negative turns rotate counterclockwise.
@@ -508,6 +494,50 @@ void parseCommand(String com)	{
 		//Set the desired color to the LED Strip
 		//setLEDColor();
 	}
+	else if (part1.equalsIgnoreCase("testbed"))
+	{
+		String dataString = "";
+		unsigned long time;
+		getTemp();
+		for (int i = 0; i<10; i++)	//Run 10 heating cycles
+		{
+			while (temp3 >= BED110CADCVALUE )
+			{
+				if (abs(temp3 - BED110CADCVALUE) > 25)
+				{
+					//Full power to the Heated Bed
+					analogWrite(HEATEDBED, 255);
+				}else if (abs(temp3 - BED110CADCVALUE) <= 25)
+				{
+					//A quarter of the total power
+					analogWrite(HEATEDBED, 64);
+				}
+				time = millis();
+				//Let's Build the String
+				dataString += String(temp3);
+				dataString += ",";
+				dataString += String(time);
+				dataString += "\n";
+				writeToSD(dataString);
+				delay(1000);
+				getTemp();
+			}
+			while (temp3 <= BEDAMBTEMPADCVALUE)
+			{
+				//just cool down and write the data every second to the SD card
+				//Let's Build the String
+				dataString += String(temp3);
+				dataString += ",";
+				dataString += String(time);
+				dataString += "\n";
+				writeToSD(dataString);
+				delay(1000);
+				getTemp();
+			}
+			
+		}
+		
+	}
 	else
 	{
 		//Default if no command was found
@@ -515,7 +545,20 @@ void parseCommand(String com)	{
 		printCommandInfo();
 	}
 }
-
+void writeToSD(String data) {
+	//Now write it on the SD card
+	File dataFile = SD.open("bedLog.txt", FILE_WRITE);
+	//Check if dataFile is available
+	if (dataFile)
+	{
+		dataFile.println(data);
+		dataFile.close();
+		Serial.println(data);
+	}
+	else {
+		Serial.println("Error opening bedLog.txt");
+	}
+}
 void printCommandInfo() {
 	Serial.println("Waiting for the commands...");
 	Serial.println("\r\nThe command format is: ");
